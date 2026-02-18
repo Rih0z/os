@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ]
+    },
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "serena"
+      ]
+    }
+  }
+}

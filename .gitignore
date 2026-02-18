@@ -1,0 +1,27 @@
+# OS learning materials
+.oss/
+.books/
+
+# Source code archives
+*.tar.gz
+*.zip
+*.7z
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.out
+*.elf
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS build artifacts
+target/
+*.bin
+*.iso
