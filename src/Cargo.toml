@@ -1,6 +1,15 @@
 [workspace]
+# Phase 0: まずカーネルだけ実装
+# 将来的にbootloader, servers, driversを追加
 members = [
     "kernel",
-    "bootloader",
 ]
 resolver = "2"
+
+# カーネル用のプロファイル設定
+# panic = "abort" はベアメタル開発で必須（パニック時にスタックアンワインドできない）
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
