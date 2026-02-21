@@ -1,10 +1,14 @@
 //! Learning OS Kernel
 //! Phase 0: 最小限のカーネル - QEMUでブートして画面に文字を表示する
+//! Phase 1: プロセス管理 - MINIX 3から学んだ構造を実装
 
 #![no_std]  // 標準ライブラリを使用しない
 #![no_main] // main関数を使用しない
 
+mod process;
+
 use core::panic::PanicInfo;
+use process::{Process, ProcessFlags, ProcessTable, Priority, MAX_PROCESSES};
 
 /// パニックハンドラ
 /// パニックが発生した際に呼ばれる（現時点では無限ループ）
