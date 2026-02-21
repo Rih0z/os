@@ -265,3 +265,216 @@ unsafe impl Sync for ProcessTable {}
 // グローバルプロセステーブル
 #[no_mangle]
 pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
+
+// ===== テスト =====
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ProcessFlagsのテスト
+    mod process_flags_tests {
+        use super::*;
+
+        #[test]
+        fn test_new_flags_are_runnable() {
+            // 新しいフラグは実行可能であるべき
+            let flags = ProcessFlags::new();
+            assert!(flags.is_runnable(), "新しいフラグは実行可能であるべき");
+        }
+
+        #[test]
+        fn test_set_sending_flag() {
+            // SENDINGフラグを設定
+            let mut flags = ProcessFlags::new();
+            flags.set(ProcessFlags::SENDING);
+            
+            assert!(flags.is_set(ProcessFlags::SENDING), "SENDINGが設定されているべき");
+            assert!(!flags.is_runnable(), "SENDING中は実行不可であるべき");
+        }
+
+        #[test]
+        fn test_set_receiving_flag() {
+            // RECEIVINGフラグを設定
+            let mut flags = ProcessFlags::new();
+            flags.set(ProcessFlags::RECEIVING);
+            
+            assert!(flags.is_set(ProcessFlags::RECEIVING), "RECEIVINGが設定されているべき");
+            assert!(!flags.is_runnable(), "RECEIVING中は実行不可であるべき");
+        }
+
+        #[test]
+        fn test_set_multiple_flags() {
+            // 複数のフラグを設定
+            let mut flags = ProcessFlags::new();
+            flags.set(ProcessFlags::SENDING);
+            flags.set(ProcessFlags::RECEIVING);
+            
+            assert!(flags.is_set(ProcessFlags::SENDING), "SENDINGが設定されているべき");
+            assert!(flags.is_set(ProcessFlags::RECEIVING), "RECEIVINGが設定されているべき");
+            assert!(!flags.is_runnable(), "複数フラグ設定時は実行不可であるべき");
+        }
+
+        #[test]
+        fn test_clear_flag() {
+            // フラグを設定してからクリア
+            let mut flags = ProcessFlags::new();
+            flags.set(ProcessFlags::SENDING);
+            flags.clear(ProcessFlags::SENDING);
+            
+            assert!(!flags.is_set(ProcessFlags::SENDING), "SENDINGがクリアされているべき");
+            assert!(flags.is_runnable(), "クリア後は実行可能であるべき");
+        }
+
+        #[test]
+        fn test_slot_free_flag() {
+            // SLOT_FREEフラグのテスト
+            let mut flags = ProcessFlags::new();
+            flags.set(ProcessFlags::SLOT_FREE);
+            
+            assert!(flags.is_set(ProcessFlags::SLOT_FREE), "SLOT_FREEが設定されているべき");
+            assert!(!flags.is_runnable(), "SLOT_FREE中は実行不可であるべき");
+        }
+    }
+
+    /// Priorityのテスト
+    mod priority_tests {
+        use super::*;
+
+        #[test]
+        fn test_default_priority() {
+            let priority = Priority::new(Priority::USER_Q);
+            assert_eq!(priority.value(), Priority::USER_Q, "デフォルト優先度はUSER_Q");
+        }
+
+        #[test]
+        fn test_task_priority() {
+            let priority = Priority::new(Priority::TASK_Q);
+            assert_eq!(priority.value(), 0, "TASK_Qは最高優先度(0)");
+        }
+
+        #[test]
+        fn test_idle_priority() {
+            let priority = Priority::new(Priority::IDLE_Q);
+            assert_eq!(priority.value(), 15, "IDLE_Qは最低優先度(15)");
+        }
+
+        #[test]
+        fn test_priority_ordering() {
+            let high = Priority::new(Priority::TASK_Q);
+            let medium = Priority::new(Priority::USER_Q);
+            let low = Priority::new(Priority::IDLE_Q);
+            
+            assert!(high < medium, "TASK_Q < USER_Q");
+            assert!(medium < low, "USER_Q < IDLE_Q");
+        }
+    }
+
+    /// Processのテスト
+    mod process_tests {
+        use super::*;
+
+        #[test]
+        fn test_new_process() {
+            let process = Process::new(1);
+            
+            assert_eq!(process.pid, 1, "PIDは1であるべき");
+            assert!(process.is_runnable(), "新しいプロセスは実行可能であるべき");
+            assert_eq!(process.priority.value(), Priority::USER_Q, "デフォルト優先度はUSER_Q");
+        }
+
+        #[test]
+        fn test_process_set_name() {
+            let mut process = Process::new(1);
+            process.set_name("init");
+            
+            assert_eq!(process.name_str(), "init", "プロセス名は'init'であるべき");
+        }
+
+        #[test]
+        fn test_process_set_long_name() {
+            let mut process = Process::new(1);
+            // 16文字以上の名前（切り詰められるべき）
+            process.set_name("this_is_a_very_long_process_name");
+            
+            // 15文字 + null終端
+            assert!(process.name_str().len() <= 15, "名前は15文字以下であるべき");
+        }
+
+        #[test]
+        fn test_process_flags_blocking() {
+            let mut process = Process::new(1);
+            process.flags.set(ProcessFlags::SENDING);
+            
+            assert!(!process.is_runnable(), "SENDING中は実行不可であるべき");
+        }
+    }
+
+    /// ProcessTableのテスト
+    mod process_table_tests {
+        use super::*;
+
+        #[test]
+        fn test_process_table_creation() {
+            let table = ProcessTable::new();
+            
+            // 最初のスロットはPID=0で初期化されている
+            let proc = table.get_mut(0).unwrap();
+            assert_eq!(proc.pid, 0, "最初のスロットのPIDは0");
+        }
+
+        #[test]
+        fn test_get_mut_out_of_bounds() {
+            let table = ProcessTable::new();
+            
+            assert!(table.get_mut(MAX_PROCESSES).is_none(), "範囲外はNoneであるべき");
+            assert!(table.get_mut(MAX_PROCESSES + 1).is_none(), "範囲外はNoneであるべき");
+        }
+
+        #[test]
+        fn test_find_free_slot() {
+            let table = ProcessTable::new();
+            
+            // SLOT_FREEが設定されていないが、PID=0でi>0のスロットが空きとみなされる
+            let slot = table.find_free_slot();
+            assert!(slot.is_some(), "空きスロットが見つかるべき");
+        }
+
+        #[test]
+        fn test_process_table_modify() {
+            let table = ProcessTable::new();
+            
+            // プロセスを変更
+            {
+                let proc = table.get_mut(0).unwrap();
+                proc.pid = 42;
+                proc.set_name("test");
+            }
+            
+            // 変更を確認
+            let proc = table.get_mut(0).unwrap();
+            assert_eq!(proc.pid, 42, "PIDが変更されているべき");
+            assert_eq!(proc.name_str(), "test", "名前が変更されているべき");
+        }
+    }
+
+    /// StackFrameのテスト
+    mod stack_frame_tests {
+        use super::*;
+
+        #[test]
+        fn test_stack_frame_new() {
+            let frame = StackFrame::new();
+            
+            assert_eq!(frame.rax, 0, "raxは0で初期化されるべき");
+            assert_eq!(frame.rip, 0, "ripは0で初期化されるべき");
+            assert_eq!(frame.rsp, 0, "rspは0で初期化されるべき");
+        }
+
+        #[test]
+        fn test_stack_frame_size() {
+            // x86_64のスタックフレームサイズ
+            // 15個の汎用レジスタ(8バイト) + rflags + rip + rsp = 18 * 8 = 144バイト
+            assert_eq!(core::mem::size_of::<StackFrame>(), 144, "StackFrameは144バイトであるべき");
+        }
+    }
+}

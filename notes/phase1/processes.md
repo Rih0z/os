@@ -797,4 +797,73 @@ struct proc {
 
 ---
 
+## テスト結果
+
+### 実行日時: 2026-02-21
+
+### テスト数: 20
+- 成功: 20
+- 失敗: 0
+
+### テスト内容
+
+#### ProcessFlags（6テスト）
+- `test_new_flags_are_runnable` - 新しいフラグは実行可能
+- `test_set_sending_flag` - SENDINGフラグの設定
+- `test_set_receiving_flag` - RECEIVINGフラグの設定
+- `test_set_multiple_flags` - 複数フラグの設定
+- `test_clear_flag` - フラグのクリア
+- `test_slot_free_flag` - SLOT_FREEフラグ
+
+#### Priority（4テスト）
+- `test_default_priority` - デフォルト優先度
+- `test_task_priority` - TASK_Q（最高優先度）
+- `test_idle_priority` - IDLE_Q（最低優先度）
+- `test_priority_ordering` - 優先度の比較
+
+#### Process（4テスト）
+- `test_new_process` - プロセスの作成
+- `test_process_set_name` - 名前の設定
+- `test_process_set_long_name` - 長い名前の切り詰め
+- `test_process_flags_blocking` - フラグによる実行不可状態
+
+#### ProcessTable（4テスト）
+- `test_process_table_creation` - テーブルの作成
+- `test_get_mut_out_of_bounds` - 範囲外アクセス
+- `test_find_free_slot` - 空きスロット検索
+- `test_process_table_modify` - プロセスの変更
+
+#### StackFrame（2テスト）
+- `test_stack_frame_new` - ゼロ初期化
+- `test_stack_frame_size` - サイズ確認（144バイト）
+
+### テスト実行コマンド
+
+```bash
+cd src/kernel && cargo test
+```
+
+### #![no_std]環境でのテスト設定
+
+テスト時は標準ライブラリを使用するよう設定：
+
+```rust
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    // ...
+}
+```
+
+---
+
 作成日: 2026-02-18

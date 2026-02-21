@@ -2,16 +2,21 @@
 //! Phase 0: 最小限のカーネル - QEMUでブートして画面に文字を表示する
 //! Phase 1: プロセス管理 - MINIX 3から学んだ構造を実装
 
-#![no_std]  // 標準ライブラリを使用しない
-#![no_main] // main関数を使用しない
+// テスト時は標準ライブラリを使用
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
 
 mod process;
 
+#[cfg(not(test))]
 use core::panic::PanicInfo;
+#[cfg(not(test))]
 use process::{Process, ProcessFlags, ProcessTable, Priority, MAX_PROCESSES};
 
 /// パニックハンドラ
 /// パニックが発生した際に呼ばれる（現時点では無限ループ）
+/// テスト時は標準ライブラリのpanicハンドラを使用
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
@@ -19,6 +24,8 @@ fn panic(_info: &PanicInfo) -> ! {
 
 /// カーネルのエントリポイント
 /// ブートローダーがこの関数を呼び出す
+/// テスト時は除外
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     // VGAテキストバッファのアドレス（0xB8000）
