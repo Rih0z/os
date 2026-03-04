@@ -266,6 +266,86 @@ unsafe impl Sync for ProcessTable {}
 #[no_mangle]
 pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
 
+/// スケジューリングキューの数
+/// MINIX 3: NR_SCHED_QUEUES = 16
+pub const NR_SCHED_QUEUES: usize = 16;
+
+/// スケジューラ
+/// MINIX 3の proc.c の enqueue, dequeue, pick_proc, sched を再現
+/// 
+/// # MINIX 3の設計
+/// - rdy_head[q]: 優先度qのキューの先頭
+/// - rdy_tail[q]: 優先度qのキューの末尾
+/// - pick_proc(): 優先度0から順にキューをチェック
+pub struct Scheduler {
+    /// 各優先度のキューの先頭プロセスインデックス
+    /// MINIX 3: struct proc *rdy_head[NR_SCHED_QUEUES]
+    rdy_head: [Option<usize>; NR_SCHED_QUEUES],
+}
+
+impl Scheduler {
+    /// 新しいスケジューラを作成
+    /// MINIX 3: rdy_head[] = NIL_PROC で初期化
+    pub const fn new() -> Self {
+        Self {
+            rdy_head: [None; NR_SCHED_QUEUES],
+        }
+    }
+    
+    /// プロセスを実行可能キューに追加
+    /// MINIX 3: enqueue() - proc.c
+    /// 
+    /// # 引数
+    /// - `process_index`: プロセステーブル内のインデックス
+    /// - `priority`: 優先度（0=最高、15=最低）
+    pub fn enqueue(&mut self, process_index: usize, priority: u8) {
+        let q = priority as usize;
+        if q < NR_SCHED_QUEUES {
+            // MINIX 3: rdy_head[q] = rp
+            self.rdy_head[q] = Some(process_index);
+        }
+    }
+    
+    /// プロセスをキューから削除
+    /// MINIX 3: dequeue() - proc.c
+    /// 
+    /// # 引数
+    /// - `process_index`: 削除するプロセスのインデックス
+    /// - `priority`: 優先度
+    pub fn dequeue(&mut self, _process_index: usize, priority: u8) {
+        let q = priority as usize;
+        if q < NR_SCHED_QUEUES {
+            // MINIX 3: キューから削除
+            self.rdy_head[q] = None;
+        }
+    }
+    
+    /// 次に実行するプロセスを選択
+    /// MINIX 3: pick_proc() - proc.c
+    /// 
+    /// # 戻り値
+    /// 次に実行するプロセスのインデックス、または None
+    /// 
+    /// # MINIX 3の実装
+    /// ```c
+    /// for (q=0; q < NR_SCHED_QUEUES; q++) {
+    ///     if ((rp = rdy_head[q]) != NIL_PROC) {
+    ///         next_ptr = rp;
+    ///         return;
+    ///     }
+    /// }
+    /// ```
+    pub fn pick_next(&self) -> Option<usize> {
+        // 優先度0（最高）から順にチェック
+        for q in 0..NR_SCHED_QUEUES {
+            if let Some(idx) = self.rdy_head[q] {
+                return Some(idx);
+            }
+        }
+        None
+    }
+}
+
 // ===== テスト =====
 #[cfg(test)]
 mod tests {
@@ -475,6 +555,79 @@ mod tests {
             // x86_64のスタックフレームサイズ
             // 15個の汎用レジスタ(8バイト) + rflags + rip + rsp = 18 * 8 = 144バイト
             assert_eq!(core::mem::size_of::<StackFrame>(), 144, "StackFrameは144バイトであるべき");
+        }
+    }
+
+    /// Schedulerのテスト
+    /// MINIX 3の proc.c の enqueue, dequeue, pick_proc, sched を再現
+    mod scheduler_tests {
+        use super::*;
+
+        #[test]
+        fn test_scheduler_new() {
+            // MINIX 3: rdy_head[] は NIL_PROC で初期化
+            let scheduler = Scheduler::new();
+            assert!(scheduler.pick_next().is_none(), "新しいスケジューラは空であるべき");
+        }
+
+        #[test]
+        fn test_scheduler_enqueue_single() {
+            // MINIX 3: enqueue() は rdy_head[q], rdy_tail[q] に追加
+            let mut scheduler = Scheduler::new();
+            
+            // プロセス0を優先度7でエンキュー
+            scheduler.enqueue(0, Priority::USER_Q);
+            
+            // pick_proc() は優先度0から順に探す
+            let next = scheduler.pick_next();
+            assert!(next.is_some(), "エンキューしたプロセスが見つかるべき");
+            assert_eq!(next.unwrap(), 0, "プロセス0が選ばれるべき");
+        }
+
+        #[test]
+        fn test_scheduler_pick_proc_priority_order() {
+            // MINIX 3: pick_proc() は for (q=0; q < NR_SCHED_QUEUES; q++)
+            // 優先度0（最高）から順にチェック
+            let mut scheduler = Scheduler::new();
+            
+            // 低優先度を先にエンキュー
+            scheduler.enqueue(1, Priority::USER_Q);  // 優先度7
+            // 高優先度を後にエンキュー
+            scheduler.enqueue(2, Priority::TASK_Q);  // 優先度0
+            
+            // 高優先度が選ばれるべき
+            let next = scheduler.pick_next();
+            assert_eq!(next.unwrap(), 2, "TASK_Q(0)がUSER_Q(7)より先に選ばれるべき");
+        }
+
+        #[test]
+        fn test_scheduler_dequeue() {
+            // MINIX 3: dequeue() はプロセスをキューから削除
+            let mut scheduler = Scheduler::new();
+            
+            scheduler.enqueue(0, Priority::USER_Q);
+            scheduler.dequeue(0, Priority::USER_Q);
+            
+            assert!(scheduler.pick_next().is_none(), "デキュー後は空であるべき");
+        }
+
+        #[test]
+        fn test_scheduler_idle_is_lowest() {
+            // MINIX 3: IDLE_Q = 15 は最低優先度
+            let mut scheduler = Scheduler::new();
+            
+            scheduler.enqueue(1, Priority::IDLE_Q);   // 優先度15
+            scheduler.enqueue(2, Priority::USER_Q);   // 優先度7
+            scheduler.enqueue(3, Priority::TASK_Q);   // 優先度0
+            
+            // TASK_Q → USER_Q → IDLE_Q の順
+            assert_eq!(scheduler.pick_next().unwrap(), 3, "TASK_Qが最初");
+            scheduler.dequeue(3, Priority::TASK_Q);
+            
+            assert_eq!(scheduler.pick_next().unwrap(), 2, "USER_Qが次");
+            scheduler.dequeue(2, Priority::USER_Q);
+            
+            assert_eq!(scheduler.pick_next().unwrap(), 1, "IDLE_Qが最後");
         }
     }
 }
